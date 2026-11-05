@@ -82,6 +82,10 @@ other figures and the runs on the arm: [agents/measurements.md](agents/measureme
 - **macOS or Linux.** On Linux, your user in the `dialout` group for the serial port
   (`sudo usermod -aG dialout $USER`, then log in again). It has driven arms from macOS; on Linux it
   builds and passes its tests, but has not driven an arm yet: reports welcome.
+- **Or Windows 10/11** (this fork): the port is a `COMx` (`SO101_PORT=COM3`, or found by itself as on
+  the other systems), through `src/hal_win32.c`. The C extension builds with MSVC: the Visual Studio
+  Build Tools with "Desktop development with C++" (2019 or later). The C tests build without `make`:
+  `test/test_hal_win32.c` checks the Windows port's clock and sleeps with no device.
 - **Python 3.12+** and **[uv](https://docs.astral.sh/uv/)** (or pip).
 - **A C compiler**: on macOS `xcode-select --install`, on Debian or Ubuntu
   `sudo apt install build-essential`.

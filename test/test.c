@@ -9,7 +9,11 @@
 
 static double now(void) {
     struct timespec t;
+#ifdef _WIN32
+    timespec_get(&t, TIME_UTC);   /* C11; MSVC has no clock_gettime. Only times the calls */
+#else
     clock_gettime(CLOCK_MONOTONIC, &t);
+#endif
     return t.tv_sec + 1e-9 * t.tv_nsec;
 }
 

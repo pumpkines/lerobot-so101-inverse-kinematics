@@ -317,6 +317,10 @@ int so101_arm_home(so101_arm *a);              /* from anywhere to the start pos
 int so101_hal_posix_open(so101_hal *hal, const char *port);
 void so101_hal_posix_close(so101_hal *hal);
 
+/* src/hal_win32.c: the same on Windows, port "COM3" (or "\\.\COM12"). stop, log and tick are left NULL. */
+int so101_hal_win32_open(so101_hal *hal, const char *port);
+void so101_hal_win32_close(so101_hal *hal);
+
 /* src/sim.c: six simulated STS servos behind so101_hal, answering the packets the real ones do, on a clock of
  * their own (a minute of moves runs in milliseconds), to try programs without an arm. A servo goes towards
  * its goal faster the further it is, and not at all within SO101_SIM_DEAD steps of it (a real one's gearbox

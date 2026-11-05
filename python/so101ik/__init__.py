@@ -46,6 +46,23 @@ ROBOT_DIRS = ("so_follower", "so101_follower")
 PORTS = {"darwin": ("/dev/tty.usbmodem*", "/dev/tty.usbserial*"), "linux": ("/dev/ttyACM*", "/dev/ttyUSB*")}
 
 
+def _windows_ports() -> list[str]:
+    """The serial ports Windows has (COM3, ...), from the registry's device map; [] if it has none."""
+    import winreg
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DEVICEMAP\SERIALCOMM")
+    except OSError:
+        return []
+    ports, i = [], 0
+    with key:
+        while True:
+            try:
+                ports.append(str(winreg.EnumValue(key, i)[1]))
+            except OSError:
+                return ports
+            i += 1
+
+
 class SetupError(RuntimeError):
     """The port or the calibration file cannot be told: none, or several. The message says what to set."""
 
@@ -149,12 +166,16 @@ def _holds(port: str, cal) -> bool:
 
 def find_port(calibration=None) -> str:
     """SO101_PORT, else the one USB serial port there is (macOS /dev/tty.usbmodem* or tty.usbserial*, Linux
-    /dev/ttyACM* or ttyUSB*). With several (a leader arm too, say) and a calibration given, the one whose
+    /dev/ttyACM* or ttyUSB*, Windows COMx). With several (a leader arm too, say) and a calibration given, the one whose
     servos hold it in their EEPROM; the check only reads. None, or no single one: SetupError."""
     if v := os.environ.get("SO101_PORT"):
         return v
-    patterns = PORTS.get(sys.platform, PORTS["linux"])
-    found = sorted({p for pattern in patterns for p in glob.glob(pattern)})
+    if sys.platform == "win32":
+        patterns = ("COM*",)
+        found = sorted(set(_windows_ports()))
+    else:
+        patterns = PORTS.get(sys.platform, PORTS["linux"])
+        found = sorted({p for pattern in patterns for p in glob.glob(pattern)})
     if len(found) == 1:
         return found[0]
     if not found:
@@ -301,8 +322,11 @@ class Arm:
     def __enter__(self) -> "Arm":
         try:
             self._arm.check()
-            for sig in (signal.SIGTERM, signal.SIGHUP):
-                self._signals[sig] = signal.signal(sig, self._stop)
+            # SIGHUP is POSIX only; Windows has SIGBREAK (Ctrl-Break, and the console window closing).
+            for name in ("SIGTERM", "SIGHUP", "SIGBREAK"):
+                if hasattr(signal, name):
+                    sig = getattr(signal, name)
+                    self._signals[sig] = signal.signal(sig, self._stop)
             self._arm.torque_on()
         except BaseException:
             self.__exit__(None, None, None)

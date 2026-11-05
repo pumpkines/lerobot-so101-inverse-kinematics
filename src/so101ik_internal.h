@@ -5,6 +5,10 @@
 #include <math.h>
 #include "so101ik.h"
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#define __attribute__(x)   /* MSVC: the printf-format checks are GCC/Clang's only */
+#endif
+
 #ifdef SO101_FLOAT
 #define RSIN sinf
 #define RCOS cosf

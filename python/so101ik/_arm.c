@@ -5,8 +5,30 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#define HAL_OPEN so101_hal_win32_open
+#define HAL_CLOSE so101_hal_win32_close
+#else
 #include <sys/time.h>
+#define HAL_OPEN so101_hal_posix_open
+#define HAL_CLOSE so101_hal_posix_close
+#endif
 #include "so101ik.h"
+
+static double wall_time(void) {   /* seconds since 1970, for the log and the CSV */
+#ifdef _WIN32
+    FILETIME ft;
+    GetSystemTimePreciseAsFileTime(&ft);
+    ULONGLONG t = ((ULONGLONG)ft.dwHighDateTime << 32) | ft.dwLowDateTime;   /* 100 ns since 1601 */
+    return (double)(t - 116444736000000000ULL) / 1e7;
+#else
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec / 1e6;
+#endif
+}
 
 static PyObject *Fault, *Unreachable, *GripLost;
 static PyTypeObject *PoseType;
@@ -70,10 +92,8 @@ static int h_stop(void *c) {
 
 static void h_log(void *c, const char *line) {
     ArmObject *o = c;
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
     char b[520];
-    snprintf(b, sizeof b, "%.2f %s", tv.tv_sec + tv.tv_usec / 1e6, line);
+    snprintf(b, sizeof b, "%.2f %s", wall_time(), line);
     PyObject *et, *ev, *tb;
     PyErr_Fetch(&et, &ev, &tb);           /* a pending KeyboardInterrupt waits for the log */
     if (o->log && o->log != Py_None) {
@@ -99,9 +119,7 @@ static PyObject *by_joint(const so101_real *v) {
 
 static void h_tick(void *c, const so101_tick *t) {
     ArmObject *o = c;
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    double now = tv.tv_sec + tv.tv_usec / 1e6;
+    double now = wall_time();
     if (o->csv) {
         fprintf(o->csv, "%.3f,%s", now, t->step);
         for (int j = 0; j < SO101_NJ; j++)
@@ -194,7 +212,7 @@ static int arm_init(ArmObject *self, PyObject *args, PyObject *kw) {
         so101_sim_init(&self->sim, c, fold);
         so101_hal_sim(&self->io, &self->sim);
         self->is_sim = 1;
-    } else if (so101_hal_posix_open(&self->io, port) != SO101_OK) {
+    } else if (HAL_OPEN(&self->io, port) != SO101_OK) {
         PyErr_Format(Fault, "cannot open %s at 1 Mbaud", port);
         return -1;
     }
@@ -219,7 +237,7 @@ static int arm_init(ArmObject *self, PyObject *args, PyObject *kw) {
 }
 
 static void arm_close_io(ArmObject *self) {
-    if (self->open && !self->is_sim) so101_hal_posix_close(&self->io);
+    if (self->open && !self->is_sim) HAL_CLOSE(&self->io);
     self->open = 0;
     if (self->csv) fclose(self->csv);
     self->csv = NULL;
