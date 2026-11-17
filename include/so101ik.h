@@ -253,7 +253,7 @@ typedef struct {
     so101_real lead_max;         /* degrees (1.6) */
     so101_real lead_min;         /* degrees (0.1) */
     so101_real start_max;        /* degrees a chain's first pose may lie from the goals, pan to wrist flex (5) */
-    int contact;                 /* the last so101_arm_follow with a press stopped on contact */
+    int contact;                 /* the last so101_arm_follow with a press stopped on contact: 1 by position, 2 by load */
 } so101_arm;
 
 /* How so101_arm_follow goes along a chain of poses. so101_follow_init sets the defaults in brackets. */
@@ -273,6 +273,13 @@ typedef struct {
     so101_real press;            /* m (0) */
     so101_real free_from, free_to;   /* fractions of the duration (0.15, 0.5) */
     int press_ticks;             /* (3) */
+    /* ... or, with press_load over 0, once the shoulder lift's load (percent) has changed by press_load from what
+     * it was 1.5 to 2.5 s before (its mean over the last 0.5 s against the mean then, either way) for
+     * press_load_ticks ticks running, from press_load_from of the duration on: the table taking the arm's
+     * weight. so101_arm.contact is then 2. */
+    so101_real press_load;       /* percent (0: off) */
+    so101_real press_load_from;  /* fraction of the duration (0.7) */
+    int press_load_ticks;        /* (5) */
     /* Optional held-object guard, checked on every reading including the settle. The chain must
      * keep the gripper goal unchanged. A position outside these inclusive percent bounds stops
      * with SO101_EGRIP: arm goals at measured positions, gripper goal retained, lead cleared,

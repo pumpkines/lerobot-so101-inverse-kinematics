@@ -422,7 +422,8 @@ class Arm:
     def follow(self, poses, speed: float = 0.03, *, duration: float | None = None, steady: bool = False,
                settle: float = 0.3, within: float = 0.0, lead: bool = False, press: float = 0.0,
                free: tuple[float, float] = (0.15, 0.5), press_ticks: int = 3, step: str | None = None,
-               grip_range: tuple[float, float] | None = None) -> bool:
+               grip_range: tuple[float, float] | None = None, press_load: float = 0.0,
+               press_load_from: float = 0.7, press_load_ticks: int = 5) -> bool:
         """Through a chain of poses (Poses, dicts by joint or six angles each; the gripper stays where it is
         where one does not say), linearly between them, at a peak tip speed in m/s or over duration s, on
         one minimum-jerk profile (steady: at a steady pace), then held settle s. The first pose must be
@@ -434,7 +435,11 @@ class Arm:
         servo up to 1.5 degrees short); the lead (Arm.lead) stays for the next chain. press (m): lowering until
         contact: the move stops once the tip, from the servos, stands this much higher above the goals' tip
         than it did in the free stretch (fractions of the duration) for press_ticks ticks; it ends there or at
-        the chain's end with every goal where its joint stands, and returns whether it touched.
+        the chain's end with every goal where its joint stands, and returns whether it touched. press_load
+        (percent, with press): contact also once the shoulder lift's load (its mean over the last 0.5 s) has
+        changed this much from its mean 1.5 to 2.5 s before (either way: the real servos read a fall, the sim a
+        rise), for press_load_ticks ticks running, from
+        press_load_from of the duration on (the table taking the arm's weight); Arm.contact_kind is then 2.
 
         grip_range: optional inclusive (minimum, maximum) gripper positions in percent, checked every
         tick, including the settle. The chain must keep the gripper goal unchanged. A reading outside
@@ -443,7 +448,7 @@ class Arm:
         to lower or recover a held object before leaving a with block, which would otherwise fold home."""
         self._ready()
         return self._arm.follow(poses, speed, duration or 0.0, steady, settle, within, lead, press, free, press_ticks,
-                                step, grip_range)
+                                step, grip_range, press_load, press_load_from, press_load_ticks)
 
     def grasp(self, rate: float = 40.0, past: float = 3.0, squeeze: float = 2.5, empty: float = 4.0,
               step: str = "grasp") -> float:
@@ -571,6 +576,11 @@ class Arm:
     def contact(self) -> bool:
         """The last follow with a press stopped on contact."""
         return self._arm.contact
+
+    @property
+    def contact_kind(self) -> int:
+        """How the last follow with a press stopped: 0 no contact, 1 by position, 2 by the lift's load."""
+        return self._arm.contact_kind
 
     @property
     def offsets(self) -> tuple[float, ...]:

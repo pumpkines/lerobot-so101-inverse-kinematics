@@ -411,15 +411,17 @@ static int read_keep_grip(ArmObject *self, PyObject *obj, so101_real deg[SO101_N
 
 static PyObject *arm_follow(ArmObject *self, PyObject *args, PyObject *kw) {
     static char *kws[] = {"poses", "speed", "duration", "steady", "settle", "within", "lead", "press", "free", "press_ticks",
-                          "step", "grip_range", NULL};
+                          "step", "grip_range", "press_load", "press_load_from", "press_load_ticks", NULL};
     PyObject *poses, *grip_range = Py_None;
     so101_follow o;
     so101_follow_init(&o);
     double speed = o.speed, duration = 0, settle = o.settle, within = 0, press = 0, from = o.free_from, to = o.free_to;
-    int steady = 0, lead = 0, ticks = o.press_ticks;
+    int steady = 0, lead = 0, ticks = o.press_ticks, load_ticks = o.press_load_ticks;
+    double press_load = 0, load_from = o.press_load_from;
     const char *step = NULL;
-    if (!PyArg_ParseTupleAndKeywords(args, kw, "O|ddpddpd(dd)izO", kws, &poses, &speed, &duration, &steady, &settle, &within,
-                                     &lead, &press, &from, &to, &ticks, &step, &grip_range))
+    if (!PyArg_ParseTupleAndKeywords(args, kw, "O|ddpddpd(dd)izOddi", kws, &poses, &speed, &duration, &steady, &settle, &within,
+                                     &lead, &press, &from, &to, &ticks, &step, &grip_range, &press_load, &load_from,
+                                     &load_ticks))
         return NULL;
     if (grip_range != Py_None) {
         double lo, hi;
@@ -453,6 +455,7 @@ static PyObject *arm_follow(ArmObject *self, PyObject *args, PyObject *kw) {
     self->busy = PyThread_get_thread_ident();
     o.speed = speed, o.duration = duration, o.steady = steady, o.settle = settle, o.within = within, o.lead = lead;
     o.press = press, o.free_from = from, o.free_to = to, o.press_ticks = ticks;
+    o.press_load = (so101_real)press_load, o.press_load_from = (so101_real)load_from, o.press_load_ticks = load_ticks;
     set_step(self, step ? step : "chain");
     int rc = so101_arm_follow(&self->arm, (const so101_real (*)[SO101_NJ])q, (int)n, &o);
     PyMem_Free(q);
@@ -571,6 +574,7 @@ static int set_step_attr(ArmObject *o, PyObject *v, void *c) {
     return 0;
 }
 static PyObject *get_contact(ArmObject *o, void *c) { return PyBool_FromLong(o->arm.contact); }
+static PyObject *get_contact_kind(ArmObject *o, void *c) { return PyLong_FromLong(o->arm.contact); }
 static PyObject *get_lead(ArmObject *o, void *c) {
     PyObject *t = PyTuple_New(4);
     for (int j = 0; j < 4; j++) PyTuple_SET_ITEM(t, j, PyFloat_FromDouble(o->arm.lead[j]));
@@ -656,6 +660,7 @@ static PyGetSetDef arm_getset[] = {
      "from it, so set it after a move_joints to a planned pose", NULL},
     {"step", (getter)get_step, (setter)set_step_attr, "what the arm is doing: the log's and the CSV's step", NULL},
     {"contact", (getter)get_contact, NULL, "the last follow with a press stopped on contact", NULL},
+    {"contact_kind", (getter)get_contact_kind, NULL, "how: 0 none, 1 by position, 2 by the lift's load", NULL},
     {"lead", (getter)get_lead, (setter)set_lead, "degrees each of pan to wrist flex is led ahead (follow(lead=True))", NULL},
     {"lead_rate", (getter)get_lead_rate, (setter)set_lead_rate, "the lead grows by this much of the lag a second", NULL},
     {"lead_max", (getter)get_lead_max, (setter)set_lead_max, "degrees the lead goes to at most", NULL},
@@ -686,7 +691,7 @@ static PyMethodDef arm_methods[] = {
      "moves most"},
     {"follow", (PyCFunction)(void (*)(void))arm_follow, METH_VARARGS | METH_KEYWORDS,
      "follow(poses, speed=0.03, duration=0, steady=False, settle=0.3, within=0, lead=False, press=0, free=(0.15, 0.5),\n"
-     "press_ticks=3, step=None, grip_range=None) -> contact: through a chain of poses (so101_arm_follow)"},
+     "press_ticks=3, step=None, grip_range=None, press_load=0, press_load_from=0.7, press_load_ticks=5) -> contact: through a chain of poses (so101_arm_follow)"},
     {"grasp", (PyCFunction)(void (*)(void))arm_grasp, METH_VARARGS | METH_KEYWORDS,
      "grasp(rate=40, past=3, squeeze=2.5, empty=4, step='grasp') -> where the jaw stopped, percent (so101_arm_grasp)"},
     {"rise", (PyCFunction)(void (*)(void))arm_rise, METH_VARARGS | METH_KEYWORDS,

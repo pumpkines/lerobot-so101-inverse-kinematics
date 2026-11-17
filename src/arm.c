@@ -436,6 +436,8 @@ void so101_follow_init(so101_follow *o) {
     o->free_from = (so101_real)0.15;
     o->free_to = (so101_real)0.5;
     o->press_ticks = 3;
+    o->press_load_from = (so101_real)0.7;
+    o->press_load_ticks = 5;
 }
 
 /* Each of pan to wrist flex led ahead of its wanted angle by what it has lagged (pos: the last reading,
@@ -463,10 +465,24 @@ static so101_real median(so101_real *v, int n) {
 }
 
 #define FREE_MAX 512           /* readings of the free stretch a contact stop keeps */
+#define LOAD_MAX 4096          /* the lift's load readings a load contact keeps (82 s at 50 Hz) */
+#define LOAD_NOW 0.5           /* s: the load now is its mean over this long ... */
+#define LOAD_THEN0 2.5         /* ... against its mean from this long ago ... */
+#define LOAD_THEN1 1.5         /* ... to this long ago */
+
+/* The mean of v[i] over the readings with t[i] in (t0, t1]; nan if fewer than 10. */
+static so101_real mean_in(const double *t, const so101_real *v, int n, double t0, double t1) {
+    double s = 0;
+    int c = 0;
+    for (int i = n - 1; i >= 0 && t[i] > t0; i--)
+        if (t[i] <= t1) s += v[i], c++;
+    return c >= 10 ? (so101_real)(s / c) : (so101_real)NAN;
+}
 
 /* Along a path over m->duration, then the hold (or, with a press, until contact and the let-off). */
 static int run(so101_arm *a, const motion *m) {
-    static so101_real free_gap[FREE_MAX];
+    static so101_real free_gap[FREE_MAX], lift_load[LOAD_MAX];
+    static double load_t[LOAD_MAX];
     const so101_follow *o = &m->o;
     ticks k;
     ticks_start(a, &k);
@@ -474,7 +490,7 @@ static int run(so101_arm *a, const motion *m) {
     k.grip_min = o->grip_min;
     k.grip_max = o->grip_max;
     so101_real want[SO101_NJ], base = 0;
-    int nfree = 0, hits = 0, read = 0, based = 0;
+    int nfree = 0, hits = 0, read = 0, based = 0, nload = 0, load_hits = 0;
     double last = 0;
     a->contact = 0;
     for (;;) {
@@ -502,6 +518,18 @@ static int run(so101_arm *a, const motion *m) {
                     break;
                 }
             }
+            if (o->press_load > 0 && nload < LOAD_MAX) {
+                load_t[nload] = t, lift_load[nload++] = k.load[1];
+                if (f >= o->press_load_from) {
+                    so101_real now = mean_in(load_t, lift_load, nload, t - LOAD_NOW, t);
+                    so101_real then = mean_in(load_t, lift_load, nload, t - LOAD_THEN0, t - LOAD_THEN1);
+                    load_hits = !isnan(now) && !isnan(then) && RFABS(then - now) >= o->press_load ? load_hits + 1 : 0;
+                    if (load_hits >= o->press_load_ticks) {
+                        a->contact = 2;
+                        break;
+                    }
+                }
+            }
             if (f >= 1) break;
         } else if (t >= m->duration) {
             if (t >= m->duration + o->settle) break;
@@ -520,7 +548,8 @@ static int run(so101_arm *a, const motion *m) {
         memcpy(a->goal, k.pos, sizeof k.pos);
         a->goal[SO101_GRIP] = grip;
         memset(a->lead, 0, sizeof a->lead);
-        say(a, "    %s: %s; the goals where the joints stand", a->step, a->contact ? "contact" : "the end, no contact");
+        say(a, "    %s: %s; the goals where the joints stand", a->step,
+            a->contact == 2 ? "contact (the lift's load changed)" : a->contact ? "contact" : "the end, no contact");
         tick_wait(a, &k);
         return hold(a, &k, o->settle);
     }
